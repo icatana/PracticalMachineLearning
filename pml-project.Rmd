@@ -1,0 +1,140 @@
+---
+title: |
+  | Practical Machine Learning Project
+  | Human Activity Recognition - Weight Lifting Exercise
+author: "Ioan Catana"
+date: "July 23, 2018"
+output: html_document
+---
+
+# Overview
+
+## Background
+Using devices such as *Jawbone Up*, *Nike FuelBand*, and *Fitbit* is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how *much* of a particular activity they do, but they rarely quantify how *well* they do it.
+
+## Goal
+In this project the goal is to develop a model to predict the manner in which they did the exercise, based on data from three-axis gyro sensors on the belt, forearm, arm, and dumbell.
+
+The measured workout was performed by six male participants who were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions:
+
+- exactly according to the specification (Class A)
+- throwing the elbows to the front (Class B)
+- lifting the dumbbell only halfway (Class C)
+- lowering the dumbbell only halfway (Class D)
+- throwing the hips to the front (Class E).
+
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. 
+
+More information is available from the website here: <http://groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Dataset). 
+
+# Data Preparation
+
+## Data loading
+```{r loadpack, echo=FALSE, message=FALSE, warning=FALSE}
+library(caret); library(rattle); library(rpart); library(rpart.plot); library(repmis); library(randomForest)
+```
+
+Download the training and testing data sets from the given URLs and load them into memory.
+```{r loaddata, message=FALSE, warning=FALSE}
+# Download the data
+#trainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+#testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+#pml_training <- read.csv(url(trainUrl), na.strings = c("", "NA"))
+#pml_testing <- read.csv(url(testUrl), na.strings = c("", "NA"))
+# Read the data from local machine
+pml_training <- read.csv("pml-training.csv", na.strings = c("NA", ""))
+pml_testing <- read.csv("pml-testing.csv", na.strings = c("NA", ""))
+```
+
+## Data analysis
+A quick look to the structure of the data:
+```{r analysedata, message=FALSE, warning=FALSE}
+dim(pml_training)
+dim(pml_testing)
+```
+
+Some observations:
+
+- The outcome variable `classe` is present only in the training dataset.
+- Many columns contain `NA` values, thus we need to do some data cleaning.
+- Also, the first seven columns seem not to be real measurements, but they are rather related to configuration and settings (like name of the participant or various timestamps), therefore they have little predicting power for the outcome `classe` and they should be excluded from the final dataset.
+
+## Data cleaning
+First we need to delete the columns containing missing `NA` values. 
+```{r emptycol, message=FALSE, warning=FALSE}
+pml_training <- pml_training[, colSums(is.na(pml_training)) == 0]
+pml_testing <- pml_testing[, colSums(is.na(pml_testing)) == 0]
+```
+
+We also remove the first seven columns for the reason mentioned in the previous section.
+```{r sevencol, message=FALSE, warning=FALSE}
+training_data <- pml_training[, -c(1:7)]
+testing_data <- pml_testing[, -c(1:7)]
+```
+
+Updated structure of the cleaned data:
+```{r updatedata, message=FALSE, warning=FALSE}
+dim(training_data)
+dim(testing_data)
+```
+
+The number of rows remains the same in both datasets, only the number of columns decreases.
+
+## Data partitioning
+In order to conduct some cross validation in future steps we need to separate our cleaned `training_data` into a training set (`train_set`, 75%) for prediction and a validation set (`valid_set` 25%). This will allow us to compute the out-of-sample errors as well.
+```{r partdata, message=FALSE, warning=FALSE}
+set.seed(12345) 
+inTrain <- createDataPartition(training_data$classe, p = 0.75, list = FALSE)
+train_set <- training_data[inTrain, ]
+valid_set <- training_data[-inTrain, ]
+```
+
+The new training set `train_set` contains `r dim(train_set)[1]` observations and the validation set `valid_set` contains `r dim(valid_set)[1]` observations.
+
+# Predictive Models
+
+In order to predict the `classe` outcome, We use the following two predictive models:
+- Decision Tree
+- Random Forests
+
+## Decision Tree
+Cross validation using a decision tree method.
+```{r dt, message=FALSE, warning=FALSE}
+control_dt = rpart.control(cp = 0, xval = 5)
+fit_dt <- rpart(classe ~ ., data=train_set, method="class", control = control_dt)
+pred_dt <- predict(fit_dt, valid_set, type = "class")
+
+# Show confusion matrix 
+(conf_dt <- confusionMatrix(pred_dt, valid_set$classe))
+# and the accuracy
+(accuracy_dt <- conf_dt$overall[1])
+```
+
+With “Decision Tree” method, the prediction reach an accuracy rate of `r round(accuracy_dt, 3)`.
+Furthermore the out-of-sample error rate is `r 1 - round(accuracy_dt, 3)`.
+
+## Random forests
+Cross validation using a random forest done at 5-fold.
+```{r rf, message=FALSE, warning=FALSE}
+control_rf <- trainControl(method = "cv", number = 5, allowParallel=T)
+fit_rf <- train(classe ~ ., data = train_set, method = "rf", trControl = control_rf)
+pred_rf <- predict(fit_rf, valid_set)
+
+# Show confusion matrix
+(conf_rf <- confusionMatrix(valid_set$classe, pred_rf))
+# and the accuracy
+(accuracy_rf <- conf_rf$overall[1])
+```
+
+With “Random Forest” method, the prediction reach an accuracy rate of `r round(accuracy_rf, 3)`, and the estimated out-of-sample error rate is `r 1 - round(accuracy_rf, 3)`. 
+For this dataset, random forest method gets better prediction results compared to decision tree method. 
+
+# Predicting Testing Classes
+At the end we use random forests model which has better accuracy, to predict the outcome variable `classe` for the testing dataset. 
+```{r pred_test, message=FALSE, warning=FALSE}
+(predict(fit_rf, testing_data))
+```
+
+
+
+
